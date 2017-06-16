@@ -1,2 +1,15 @@
+#ifndef __USER_CONFIG_H_
+#define __USER_CONFIG_H_
+
+#include "user_interface.h"
+#include "espconn.h"
+
 #define SSID "WIFI-NAME"
 #define SSID_PASSWORD "PASSWORD"
+#define SSID_MODE STATIONAP_MODE
+#define SSID_AUTH_MODE AUTH_WPA_WPA2_PSK
+#define SSID_MAX_CON 10
+
+#define DEVICE_ADDR 0xFFFFFF // IMPORTANT! Litle endian
+
+#endif /*__USER_CONFIG_H_*/

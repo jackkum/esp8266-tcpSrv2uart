@@ -1,202 +1,180 @@
 #define PLATFORM_DEBUG	true
 
+#include "user_config.h"
 #include "ets_sys.h"
 #include "osapi.h"
 #include "os_type.h"
 #include "user_interface.h"
 #include "driver/uart.h"
+#include "pack.h"
+#include "server.h"
+#include "wifi.h"
 #include "espconn.h"
 #include "mem.h"
 #include "gpio.h"
-#include "user_config.h"
 
 #define TASK_QUEUE_LEN 4
-
-typedef enum {
-	WIFI_CONNECTING,
-	WIFI_CONNECTING_ERROR,
-	WIFI_CONNECTED,
-	TCP_DISCONNECTED,
-	TCP_CONNECTING,
-	TCP_CONNECTING_ERROR,
-	TCP_CONNECTED,
-	TCP_SENDING_DATA_ERROR,
-	TCP_SENT_DATA
-} tConnState;
+#define RS484_DIR (1 << 5)
 
 static void recvTask(os_event_t *events);
-static void ICACHE_FLASH_ATTR config_recv_cb(void *arg, char *data, unsigned short len);
-static void ICACHE_FLASH_ATTR config_recon_cb(void *arg, sint8 err);
-static void ICACHE_FLASH_ATTR config_discon_cb(void *arg);
-static void ICACHE_FLASH_ATTR config_sent_cb(void *arg);
-static void ICACHE_FLASH_ATTR config_connected_cb(void *arg);
+/**
+ * @brief      Callbaks for receive
+ *
+ * @param      data  The data
+ * @param[in]  len   The length
+ */
+static void ICACHE_FLASH_ATTR onProxyData(char * data, uint16 len);
+static void ICACHE_FLASH_ATTR onCommandData(char * data, uint16 len);
 
-static char macaddr[6];
-static ETSTimer WiFiLinker;
-static tConnState connState = WIFI_CONNECTING;
+// UartDev is defined and initialized in rom code.
+extern UartDevice UartDev;
 
-static struct espconn config_conn;
-static esp_tcp config_tcp_conn;
+/**
+ * Servers
+ */
+SERVER *bridge, *config;
 
-struct espconn *client;
-
-uint8_t controlServerStatus = 0;
-
-void delay_ms(uint16_t ms)
+void delay_ms(uint16 ms)
 {
 	while(ms--){
 		os_delay_us(1000);
 	}
 }
 
-void ICACHE_FLASH_ATTR config_conn_init()
-{
-	//uart0_sendStr("TCP server accepting on 8888\r\n");
-
-	config_conn.type           = ESPCONN_TCP;
-	config_conn.state          = ESPCONN_NONE;
-	config_tcp_conn.local_port = 8888;
-	config_conn.proto.tcp      = &config_tcp_conn;
-
-	espconn_regist_connectcb(&config_conn, config_connected_cb);
-	espconn_accept(&config_conn);
-
-	os_event_t *recvTaskQueue = (os_event_t *)os_malloc(sizeof(os_event_t) * TASK_QUEUE_LEN);
-	system_os_task(recvTask, USER_TASK_PRIO_0, recvTaskQueue, TASK_QUEUE_LEN);
-}
-
-static void ICACHE_FLASH_ATTR config_recv_cb(void *arg, char *data, unsigned short len)
-{
-	uart0_tx_buffer(data, len);
-}
-
-static void ICACHE_FLASH_ATTR config_recon_cb(void *arg, sint8 err)
-{
-}
-
-static void ICACHE_FLASH_ATTR config_discon_cb(void *arg)
-{
-	//uart0_sendStr("TCP client closed...\r\n");
-	if (client != NULL){
-		if (client->state == ESPCONN_NONE || client->state >= ESPCONN_CLOSE){
-			client = NULL;
-		}
-	}
-}
-
-static void ICACHE_FLASH_ATTR config_sent_cb(void *arg)
-{
-
-}
-
-static void ICACHE_FLASH_ATTR config_connected_cb(void *arg)
-{
-	//uart0_sendStr("TCP client opened...\r\n");
-
-	if (client != NULL){
-		espconn_disconnect((struct espconn *)arg);
-		return;
-	}
-
-	client = (struct espconn *)arg;
-
-	espconn_regist_recvcb  (client, config_recv_cb);
-	espconn_regist_reconcb (client, config_recon_cb);
-	espconn_regist_disconcb(client, config_discon_cb);
-	espconn_regist_sentcb  (client, config_sent_cb);
-
-	//char *transmission = "OK\r\n\r\nOK!\n";
-	//sint8 d = espconn_sent(conn,transmission,strlen(transmission));
-}
-
-static void ICACHE_FLASH_ATTR recvTask(os_event_t *events)
-{
-	char sig_rx[1];
-	switch (events->sig) {
-		case 0:
-			if(client != NULL){
-				sig_rx[0] = (char)events->par;
-				espconn_sent(client, sig_rx, 1);
-			}
-			break;
-		default:
-			break;
-	}
-}
-
-static void ICACHE_FLASH_ATTR wifi_check_ip(void *arg)
-{
-	struct ip_info ipConfig;
-
-	os_timer_disarm(&WiFiLinker);
-
-	wifi_get_ip_info(STATION_IF, &ipConfig);
-
-	if (wifi_station_get_connect_status() == STATION_GOT_IP && ipConfig.ip.addr != 0){
-		//uart0_sendStr("WiFi connected\r\n");
-
-		os_timer_setfn(&WiFiLinker, (os_timer_func_t *)wifi_check_ip, NULL);
-		os_timer_arm(&WiFiLinker, 5000, 0);
-
-		if(controlServerStatus == 0) {
-			controlServerStatus++;
-			config_conn_init();
-		}
-    } else {
-
-		if(wifi_station_get_connect_status() == STATION_WRONG_PASSWORD)
-		{
-			//uart0_sendStr("WiFi connecting error, wrong password\r\n");
-		}
-		else if(wifi_station_get_connect_status() == STATION_NO_AP_FOUND)
-		{
-			//uart0_sendStr("WiFi connecting error, ap not found\r\n");
-		}
-		else if(wifi_station_get_connect_status() == STATION_CONNECT_FAIL)
-		{
-			//uart0_sendStr("WiFi connecting fail\r\n");
-		}
-		else
-		{
-			//uart0_sendStr("WiFi connecting...\r\n");
-		}
-
-		os_timer_setfn(&WiFiLinker, (os_timer_func_t *)wifi_check_ip, NULL);
-		os_timer_arm(&WiFiLinker, 1000, 0);
-
-		controlServerStatus = 0;
-    }
-}
-
-//Init function
+/**
+ * Entrance point
+ */
 void ICACHE_FLASH_ATTR user_init()
 {
-	uart_init(BIT_RATE_115200, BIT_RATE_115200);
+	// default initialize uart
+	uart_init(BIT_RATE_9600, BIT_RATE_9600);
 
+	// init gpio
+	gpio_init();
+
+	// config direction of IO
+	PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO5_U, FUNC_GPIO5);
+
+	// pull up to the ground 
+	gpio_output_set(0, RS484_DIR, RS484_DIR, 0);
+
+	// delay
 	delay_ms(100);
+ 
+ 	// init wifi
+  WiFiInit();
 
-	//uart0_sendStr("\r\nESP8266 platform starting...\r\n");
+  // os task for recv bytes from uart
+  os_event_t *recvTaskQueue = (os_event_t *) os_malloc(sizeof(os_event_t) * TASK_QUEUE_LEN);
+  system_os_task(recvTask, USER_TASK_PRIO_0, recvTaskQueue, TASK_QUEUE_LEN);
 
-	struct station_config stationConfig;
+  // let's get it started
+  uart0_sendStr("Create server: 8888\n");
+  bridge = createServer(8888, &onProxyData);
 
-	if(wifi_get_opmode() != STATION_MODE){
-		wifi_set_opmode(STATION_MODE);
+  // server for configurations
+  uart0_sendStr("Create server: 9999\n");
+  config = createServer(9999, &onCommandData);
+}
+
+/**
+ * @brief      Callback task
+ *
+ * @param      events  The events
+ */
+static void ICACHE_FLASH_ATTR recvTask(os_event_t *events)
+{
+  char sig_rx[1];
+  switch (events->sig) {
+    case 0:
+      sig_rx[0] = (char) events->par;
+      writeClient(bridge, sig_rx, 1);
+      break;
+
+    default:
+      break;
+  }
+}
+
+/**
+ * @brief      Callback for the transparent server
+ *
+ * @param      data  The data
+ * @param[in]  len   The length
+ */
+static void ICACHE_FLASH_ATTR onProxyData(char * data, uint16 len) {
+	// higth level
+  gpio_output_set(RS484_DIR, 0, RS484_DIR, 0);
+  // wait
+  os_delay_us(1);
+  // send buffer
+  uart0_tx_buffer(data, len);
+  // wait
+  os_delay_us(2000);
+  // low level
+  gpio_output_set(0, RS484_DIR, RS484_DIR, 0);
+}
+
+/**
+ * @brief      Callback for the configuration server
+ *
+ * @param      data  The data
+ * @param[in]  len   The length
+ */
+static void ICACHE_FLASH_ATTR onCommandData(char * data, uint16 len) {
+
+	// cast to packet
+	Packet *pack = getPacket(data);
+	// init data from packet
+	Data *d = (Data *) &pack->data;
+	// init answer
+	Packet answer;
+	// init data of answer
+	Data aData;
+
+	// fill headers
+	answer.header.address = DEVICE_ADDR;
+	answer.header.command = pack->header.command;
+	answer.header.length  = 7 + sizeof(Data);
+
+	// request is for me
+	if(checkPacket(pack, DEVICE_ADDR) == PACKET_ERROR_NO_ERROR){
+
+		// validate crc of packet
+		uint8 error = checkCrc(pack);
+
+		// put error to the answer
+		aData.error = error;
+
+		// no errors
+		if(error == PACKET_ERROR_NO_ERROR){
+			// check command
+			switch(pack->header.command){
+
+				// command to set params of uart
+				case PACK_COMMAND_SET_DATA:
+					UartDev.baut_rate = (UartBautRate) d->baudrate;
+					UartDev.data_bits = (UartBitsNum4Char) d->bits;
+					UartDev.parity    = (UartParityMode) d->parity;
+					UartDev.stop_bits = (UartStopBitsNum) d->stop;
+
+			    uart_config(UART0);
+			    uart_config(UART1);
+				break;
+			}
+
+			// set current params to the answer
+			aData.baudrate = (uint32) UartDev.baut_rate;
+			aData.bits     = (uint8) UartDev.data_bits;
+			aData.parity   = (uint8) UartDev.parity;
+			aData.stop     = (uint8) UartDev.stop_bits;
+		}
+
+		// copy params to the answer
+		os_memcpy(&answer.data, (uint8 *)&aData, sizeof(Data));
+		// recalculate crc of packet
+		setCrc(&answer);
+		// answer to the client
+		writeClient(config, (uint8 *)&answer, answer.header.length);
 	}
-
-	if(wifi_get_opmode() == STATION_MODE){
-		wifi_station_get_config(&stationConfig);
-		os_memset(stationConfig.ssid, 0, sizeof(stationConfig.ssid));
-		os_memset(stationConfig.password, 0, sizeof(stationConfig.password));
-		os_sprintf(stationConfig.ssid, "%s", SSID);
-		os_sprintf(stationConfig.password, "%s", SSID_PASSWORD);
-		wifi_station_set_config(&stationConfig);
-		wifi_get_macaddr(SOFTAP_IF, macaddr);
-		//uart0_sendStr(macaddr);
-		//uart0_sendStr("\r\n");
-	}
-
-	os_timer_disarm(&WiFiLinker);
-	os_timer_setfn(&WiFiLinker, (os_timer_func_t *)wifi_check_ip, NULL);
-	os_timer_arm(&WiFiLinker, 1000, 0);
-
 }
