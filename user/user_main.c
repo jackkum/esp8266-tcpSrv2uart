@@ -14,7 +14,9 @@
 #include "gpio.h"
 
 #define TASK_QUEUE_LEN 4
-#define RS484_DIR (1 << 5)
+#define RS484_DIR BIT5
+#define LED_RED BIT14
+#define LED_GREEN BIT16
 
 static void recvTask(os_event_t *events);
 /**
@@ -46,17 +48,21 @@ void delay_ms(uint16 ms)
  */
 void ICACHE_FLASH_ATTR user_init()
 {
-  // default initialize uart
-  uart_init(BIT_RATE_9600, BIT_RATE_9600);
-
   // init gpio
   gpio_init();
 
+  // default initialize uart
+  uart_init(BIT_RATE_9600, BIT_RATE_9600);
+
   // config direction of IO
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO5_U, FUNC_GPIO5);
+  PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTMS_U, FUNC_GPIO14);
+  //PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO16_U, FUNC_GPIO16);
 
   // pull up to the ground 
   gpio_output_set(0, RS484_DIR, RS484_DIR, 0);
+  gpio_output_set(LED_RED, 0, LED_RED, 0);
+  //gpio_output_set(LED_GREEN, 0, 0, LED_GREEN);
 
   // delay
   delay_ms(100);
@@ -64,17 +70,21 @@ void ICACHE_FLASH_ATTR user_init()
   // init wifi
   WiFiInit();
 
+  __debug("\r\nStarted ESP Bridge", RS484_DIR);
+
   // os task for recv bytes from uart
   os_event_t *recvTaskQueue = (os_event_t *) os_malloc(sizeof(os_event_t) * TASK_QUEUE_LEN);
   system_os_task(recvTask, USER_TASK_PRIO_0, recvTaskQueue, TASK_QUEUE_LEN);
 
   // let's get it started
-  uart0_sendStr("Create server: 8888\n");
-  bridge = createServer(8888, &onProxyData);
+  __debug("Create server: 8888", RS484_DIR);
+  bridge = createServer(8888, &onCommandData);
 
   // server for configurations
-  uart0_sendStr("Create server: 9999\n");
-  config = createServer(9999, &onCommandData);
+  //__debug("Create server: 9999", RS484_DIR);
+  //config = createServer(9999, &onCommandData);
+
+  __debug("Initialization complete", RS484_DIR);
 }
 
 /**
@@ -103,8 +113,10 @@ static void ICACHE_FLASH_ATTR recvTask(os_event_t *events)
  * @param[in]  len   The length
  */
 static void ICACHE_FLASH_ATTR onProxyData(char * data, uint16 len) {
+
   // higth level
   gpio_output_set(RS484_DIR, 0, RS484_DIR, 0);
+  gpio_output_set(0, LED_RED, LED_RED, 0);
   // wait
   os_delay_us(1);
   // send buffer
@@ -113,6 +125,7 @@ static void ICACHE_FLASH_ATTR onProxyData(char * data, uint16 len) {
   os_delay_us(2000);
   // low level
   gpio_output_set(0, RS484_DIR, RS484_DIR, 0);
+  gpio_output_set(LED_RED, 0, LED_RED, 0);
 }
 
 /**
@@ -160,6 +173,7 @@ static void ICACHE_FLASH_ATTR onCommandData(char * data, uint16 len) {
 
           uart_config(UART0);
           uart_config(UART1);
+
         break;
       }
 
@@ -172,9 +186,13 @@ static void ICACHE_FLASH_ATTR onCommandData(char * data, uint16 len) {
 
     // copy params to the answer
     os_memcpy(&answer.data, (uint8 *)&aData, sizeof(Data));
+    
     // recalculate crc of packet
     setCrc(&answer);
+
     // answer to the client
-    writeClient(config, (uint8 *)&answer, answer.header.length);
+    writeClient(bridge, (uint8 *)&answer, answer.header.length);
+  } else {
+    onProxyData(data, len);
   }
 }

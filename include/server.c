@@ -1,16 +1,10 @@
 
 #include "server.h"
 
-void ICACHE_FLASH_ATTR onRecv(void *arg, char *data, uint16 len);
-void ICACHE_FLASH_ATTR onReconnect(void *arg, sint8 err);
-void ICACHE_FLASH_ATTR onDisconnect(void *arg);
-void ICACHE_FLASH_ATTR onSent(void *arg);
-void ICACHE_FLASH_ATTR onConnected(void *arg);
-
 /**
  * Pointers to servers
  */
-SERVER **servers;
+static SERVER servers[2];
 
 /**
  * Counter of servers
@@ -27,11 +21,12 @@ volatile uint16 serverCount = 0;
  */
 SERVER *createServer(uint16 port, OnRecvCallback onRecvCallback)
 {
+
   // increment count of servers
   serverCount++;
 
   // add memory
-  servers = (SERVER **)os_realloc(servers, serverCount * sizeof(SERVER));
+  //servers = (SERVER **)os_realloc(servers, serverCount * sizeof(SERVER));
 
   // get created server
   SERVER *srv = (SERVER*) &servers[serverCount-1];
@@ -40,16 +35,18 @@ SERVER *createServer(uint16 port, OnRecvCallback onRecvCallback)
   srv->socket.type       = ESPCONN_TCP;
   srv->socket.state      = ESPCONN_NONE;
   srv->tcp.local_port    = port;
-  srv->socket.proto.tcp  = &srv->tcp;
+  srv->socket.proto.tcp  = &(srv->tcp);
   srv->port              = port;
   srv->onRecvCallback    = onRecvCallback;
 
   // register connection event
-  espconn_regist_connectcb(&srv->socket, onConnected);
+  espconn_regist_connectcb(&(srv->socket), onConnected);
+
   // accept connection
-  espconn_accept(&srv->socket);
+  espconn_accept(&(srv->socket));
+
   // register timeout
-  espconn_regist_time(&srv->socket, 180, 0);
+  //espconn_regist_time(&srv->socket, 180, 0);
 
   // return a pointer to the server
   return srv;
@@ -68,7 +65,7 @@ SERVER *findServerByClient(Socket *client)
   for(i = 0; i < serverCount; i++){
     SERVER *srv = (SERVER *)&servers[i];
 
-    if(srv->port == client->proto.tcp->remote_port){
+    if(srv->port == client->proto.tcp->local_port){
       return srv;
     }
   }
@@ -85,6 +82,7 @@ SERVER *findServerByClient(Socket *client)
  */
 void writeClient(SERVER * self, char * buffer, uint8 len)
 {
+
   if(self->client == NULL){
     return;
   }
@@ -99,14 +97,14 @@ void writeClient(SERVER * self, char * buffer, uint8 len)
  * @param      data  The data
  * @param[in]  len   The length
  */
-void ICACHE_FLASH_ATTR onRecv(void *arg, char *data, uint16 len)
+static void ICACHE_FLASH_ATTR onRecv(void *arg, char *data, uint16 len)
 {
+
   Socket *client = (Socket *)arg;
 
   SERVER *srv = findServerByClient(client);
 
   if(srv == NULL){
-    uart0_sendStr("Server not found by port number\n");
     return;
   }
 
@@ -122,16 +120,13 @@ void ICACHE_FLASH_ATTR onRecv(void *arg, char *data, uint16 len)
  *
  * @param      arg   The argument
  */
-void ICACHE_FLASH_ATTR onDisconnect(void *arg)
+static void ICACHE_FLASH_ATTR onDisconnect(void *arg)
 {
-  uart0_sendStr("TCP client closed\n");
-
   Socket *client = (Socket *)arg;
 
   SERVER *srv = findServerByClient(client);
 
   if(srv == NULL){
-    uart0_sendStr("Server not found by port number\n");
     return;
   }
 
@@ -147,15 +142,13 @@ void ICACHE_FLASH_ATTR onDisconnect(void *arg)
  *
  * @param      arg   The argument
  */
-void ICACHE_FLASH_ATTR onConnected(void *arg)
+static void ICACHE_FLASH_ATTR onConnected(void *arg)
 {
-  uart0_sendStr("Register callbacks\n");
   Socket *client = (Socket *)arg;
 
   SERVER *srv = findServerByClient(client);
 
   if(srv == 0){
-    uart0_sendStr("Server not found by port number\n");
     return;
   }
 
@@ -169,10 +162,10 @@ void ICACHE_FLASH_ATTR onConnected(void *arg)
 
 
 
-void ICACHE_FLASH_ATTR onSent(void *arg)
+static void ICACHE_FLASH_ATTR onSent(void *arg)
 {
 }
 
-void ICACHE_FLASH_ATTR onReconnect(void *arg, sint8 err)
+static void ICACHE_FLASH_ATTR onReconnect(void *arg, sint8 err)
 {
 }

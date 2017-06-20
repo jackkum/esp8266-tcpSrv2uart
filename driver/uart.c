@@ -173,6 +173,21 @@ uart0_sendStr(const char *str)
 	}
 }
 
+void ICACHE_FLASH_ATTR __debug(const char *str, uint32 dir){
+  // higth level
+  gpio_output_set(dir, 0, dir, 0);
+  // wait
+  os_delay_us(1);
+  // send buffer
+  while(*str) uart_tx_one_char(*str++);
+  uart_tx_one_char('\r');
+  uart_tx_one_char('\n');
+  // wait
+  os_delay_us(2000);
+  // low level
+  gpio_output_set(0, dir, dir, 0);
+}
+
 /******************************************************************************
  * FunctionName : uart_init
  * Description  : user interface for init uart
