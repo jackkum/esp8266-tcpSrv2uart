@@ -84,6 +84,7 @@ void writeClient(SERVER * self, char * buffer, uint8 len)
 {
 
   if(self->client == NULL){
+    //__debug("No more client socket", RS484_DIR);
     return;
   }
 
@@ -99,6 +100,8 @@ void writeClient(SERVER * self, char * buffer, uint8 len)
  */
 static void ICACHE_FLASH_ATTR onRecv(void *arg, char *data, uint16 len)
 {
+
+  //__debug("Client recv", RS484_DIR);
 
   Socket *client = (Socket *)arg;
 
@@ -122,6 +125,8 @@ static void ICACHE_FLASH_ATTR onRecv(void *arg, char *data, uint16 len)
  */
 static void ICACHE_FLASH_ATTR onDisconnect(void *arg)
 {
+  //__debug("Client disconnected", RS484_DIR);
+
   Socket *client = (Socket *)arg;
 
   SERVER *srv = findServerByClient(client);
@@ -144,14 +149,17 @@ static void ICACHE_FLASH_ATTR onDisconnect(void *arg)
  */
 static void ICACHE_FLASH_ATTR onConnected(void *arg)
 {
+
   Socket *client = (Socket *)arg;
 
   SERVER *srv = findServerByClient(client);
 
-  if(srv == 0){
+  if(srv == NULL){
+    //__debug("No server found", RS484_DIR);
     return;
   }
 
+  //__debug("Client connected", RS484_DIR);
   srv->client = client;
 
   espconn_regist_recvcb(client,   onRecv);
