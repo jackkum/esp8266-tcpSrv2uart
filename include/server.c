@@ -46,7 +46,7 @@ SERVER *createServer(uint16 port, OnRecvCallback onRecvCallback)
   espconn_accept(&(srv->socket));
 
   // register timeout
-  //espconn_regist_time(&srv->socket, 180, 0);
+  espconn_regist_time(&srv->socket, 300, 0);
 
   // return a pointer to the server
   return srv;
