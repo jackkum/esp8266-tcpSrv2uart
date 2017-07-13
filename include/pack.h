@@ -36,6 +36,7 @@ typedef struct {
   uint8 bits;
   uint8 parity;
   uint8 stop;
+  //uint16 adc;
 } Data;
 #pragma pack(pop)
 

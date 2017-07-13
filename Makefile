@@ -28,7 +28,7 @@ SDK_BASE	?= /opt/Espressif/ESP8266_SDK
 # esptool.py path and port
 ESPTOOL		?= esptool.py
 ESPPORT		?= /dev/ttyUSB2
-ESPBAUD   ?= 19200
+ESPBAUD   ?= 115200
 
 # name for the target project
 TARGET		= app

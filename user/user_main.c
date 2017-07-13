@@ -15,12 +15,11 @@
 
 #define TASK_QUEUE_LEN 4
 #define RS484_DIR BIT5
-#define LED_RED BIT14
-#define LED_GREEN BIT14
+#define LED_RED BIT12
+#define LED_GREEN BIT13
 
 static void recvTask(os_event_t *events);
 static void ICACHE_FLASH_ATTR onProxyDataToSocket();
-static void ICACHE_FLASH_ATTR testIo();
 
 /**
  * @brief      Callbaks for receive
@@ -37,9 +36,7 @@ extern UartDevice UartDev;
 volatile char rx_buffer[255];
 volatile uint8 rx_pos = 0;
 
-volatile uint8 io = 0;
-
-static os_timer_t rx_timer, led_timer, test_io;
+static os_timer_t rx_timer, led_timer;
 
 /**
  * Servers
@@ -51,6 +48,24 @@ void delay_ms(uint16 ms)
   while(ms--){
     os_delay_us(1000);
   }
+}
+
+void ledGreen()
+{
+  gpio_output_set(LED_RED, 0,   LED_RED,   0);
+  gpio_output_set(0, LED_GREEN, LED_GREEN, 0);
+}
+
+void ledRed()
+{
+  gpio_output_set(0, LED_RED,   LED_RED,   0);
+  gpio_output_set(LED_GREEN, 0, LED_GREEN, 0);
+}
+
+void ledOff()
+{
+  gpio_output_set(0, LED_RED,   LED_RED,   0);
+  gpio_output_set(0, LED_GREEN, LED_GREEN, 0);
 }
 
 /**
@@ -80,23 +95,15 @@ void ICACHE_FLASH_ATTR user_init()
 
   // config direction of IO
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO5_U, FUNC_GPIO5);
-  PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTMS_U, FUNC_GPIO14);
-  //PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO16_U, FUNC_GPIO16);
-  
-  PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO4_U, FUNC_GPIO4);
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U,  FUNC_GPIO12);
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTCK_U,  FUNC_GPIO13);
-  PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDO_U,  FUNC_GPIO15);
+  
 
   // pull up to the ground 
   gpio_output_set(0, RS484_DIR, RS484_DIR, 0);
-  gpio_output_set(LED_RED, 0, LED_RED, 0);
-  //gpio_output_set(LED_GREEN, 0, 0, LED_GREEN);
   
-  gpio_output_set(0, BIT4, BIT4, 0);
-  gpio_output_set(0, BIT12, BIT12, 0);
-  gpio_output_set(0, BIT13, BIT13, 0);
-  gpio_output_set(0, BIT15, BIT15, 0);
+  // turn off the lends
+  ledOff();
 
   // delay
   delay_ms(100);
@@ -118,26 +125,7 @@ void ICACHE_FLASH_ATTR user_init()
   //__debug("Create server: 9999", RS484_DIR);
   //config = createServer(9999, &onCommandData);
 
-  os_timer_disarm(&test_io);
-  os_timer_setfn(&test_io, (os_timer_func_t *)testIo, NULL);
-  os_timer_arm(&test_io, 1000, 1);
-
   __debug("Initialization complete", RS484_DIR);
-}
-
-static void ICACHE_FLASH_ATTR testIo(){
-  io = !io;
-  if(io){
-    gpio_output_set(0, BIT4,  BIT4,  0);
-    gpio_output_set(0, BIT12, BIT12, 0);
-    gpio_output_set(0, BIT13, BIT13, 0);
-    gpio_output_set(0, BIT15, BIT15, 0);
-  } else {
-    gpio_output_set(BIT4,  0, BIT4,  0);
-    gpio_output_set(BIT12, 0, BIT12, 0);
-    gpio_output_set(BIT13, 0, BIT13, 0);
-    gpio_output_set(BIT15, 0, BIT15, 0);
-  }
 }
 
 /**
@@ -154,7 +142,7 @@ static void ICACHE_FLASH_ATTR recvTask(os_event_t *events)
       os_timer_disarm(&rx_timer);
 
       // led
-      gpio_output_set(0, LED_RED, LED_RED, 0);
+      ledRed();
 
       // get next byte
       rx_buffer[rx_pos++] = (uint8) events->par;
@@ -180,7 +168,7 @@ static void ICACHE_FLASH_ATTR onProxyDataToSocket() {
   writeClient(bridge, (char *)&rx_buffer[0], rx_pos);
   rx_pos = 0;
 
-  gpio_output_set(LED_RED, 0, LED_RED, 0);
+  ledOff();
 }
 
 /**
@@ -205,7 +193,7 @@ static void ICACHE_FLASH_ATTR onProxyData(char * data, uint16 len) {
 }
 
 static void ICACHE_FLASH_ATTR onLedOfTimer() {
-  gpio_output_set(LED_GREEN, 0, LED_GREEN, 0);
+  ledOff();
 }
 
 /**
@@ -216,7 +204,7 @@ static void ICACHE_FLASH_ATTR onLedOfTimer() {
  */
 static void ICACHE_FLASH_ATTR onCommandData(char * data, uint16 len) {
 
-  gpio_output_set(0, LED_GREEN, LED_GREEN, 0);
+  ledGreen();
   os_timer_disarm(&led_timer);
   os_timer_setfn(&led_timer, (os_timer_func_t *)onLedOfTimer, NULL);
   os_timer_arm(&led_timer, 300, 0);
@@ -270,6 +258,7 @@ static void ICACHE_FLASH_ATTR onCommandData(char * data, uint16 len) {
       aData.bits     = (uint8) UartDev.data_bits;
       aData.parity   = (uint8) UartDev.parity;
       aData.stop     = (uint8) UartDev.stop_bits;
+      //aData.adc      = system_adc_read();
     }
 
     // copy params to the answer
