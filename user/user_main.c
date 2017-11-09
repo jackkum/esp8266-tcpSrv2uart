@@ -79,10 +79,10 @@ void ICACHE_FLASH_ATTR user_init()
   // default initialize uart
   uart_init(BIT_RATE_9600, BIT_RATE_9600);
 
-  /**
+  /*
   // feature implementation of saving params
   uint8 data[sizeof(Data)];
-  system_rtc_mem_read(64, data, sizeof(Data)) ;
+  system_rtc_mem_read(64, &data, sizeof(Data)) ;
   Data *d = (Data *) &data;
   UartDev.baut_rate = (UartBautRate) d->baudrate;
   UartDev.data_bits = (UartBitsNum4Char) d->bits;
@@ -91,7 +91,7 @@ void ICACHE_FLASH_ATTR user_init()
 
   uart_config(UART0);
   uart_config(UART1);
-   */
+  */
 
   // config direction of IO
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO5_U, FUNC_GPIO5);
@@ -239,26 +239,61 @@ static void ICACHE_FLASH_ATTR onCommandData(char * data, uint16 len) {
 
         // command to set params of uart
         case PACK_COMMAND_SET_DATA:
+
           UartDev.baut_rate = (UartBautRate) d->baudrate;
-          UartDev.data_bits = (UartBitsNum4Char) d->bits;
-          UartDev.parity    = (UartParityMode) d->parity;
-          UartDev.stop_bits = (UartStopBitsNum) d->stop;
+
+          switch(d->bits){
+            case 5: UartDev.data_bits = FIVE_BITS;  break;
+            case 6: UartDev.data_bits = SIX_BITS;   break;
+            case 7: UartDev.data_bits = SEVEN_BITS; break;
+            case 8: UartDev.data_bits = EIGHT_BITS; break;
+          }
+
+          switch(d->parity){
+            case 'N': UartDev.parity = NONE_BITS;  break;
+            case 'O': UartDev.parity = ODD_BITS;   break;
+            case 'E': UartDev.parity = EVEN_BITS;  break;
+          }
+
+          switch(d->stop){
+            case 1: UartDev.stop_bits = ONE_STOP_BIT;  break;
+            case 2: UartDev.stop_bits = TWO_STOP_BIT;  break;
+          }
 
           uart_config(UART0);
           uart_config(UART1);
 
           // write params
-          //system_rtc_mem_write(64, pack->data, sizeof(Data));
+          //system_rtc_mem_write(64, &pack->data, sizeof(Data));
 
         break;
+
+        default:
+          aData.error = 0xFF; // unknown command
       }
 
       // set current params to the answer
       aData.baudrate = (uint32) UartDev.baut_rate;
-      aData.bits     = (uint8) UartDev.data_bits;
-      aData.parity   = (uint8) UartDev.parity;
-      aData.stop     = (uint8) UartDev.stop_bits;
-      //aData.adc      = system_adc_read();
+      switch(UartDev.data_bits){
+        case FIVE_BITS:  d->bits = 5; break;
+        case SIX_BITS:   d->bits = 6; break;
+        case SEVEN_BITS: d->bits = 7; break;
+        case EIGHT_BITS: d->bits = 8; break;
+        default: d->bits = UartDev.data_bits;
+      }
+
+      switch(UartDev.parity){
+        case NONE_BITS: d->parity = 'N'; break;
+        //case ODD_BITS:  d->parity = 'O'; break;
+        case EVEN_BITS: d->parity = 'E'; break;
+        default: d->parity = 'N';
+      }
+
+      switch(UartDev.stop_bits){
+        case ONE_STOP_BIT: d->stop = 1; break;
+        case TWO_STOP_BIT: d->stop = 2; break;
+        default: d->stop = 0;
+      }
     }
 
     // copy params to the answer
